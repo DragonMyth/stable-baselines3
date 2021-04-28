@@ -249,12 +249,12 @@ class PPOAdjustKL(OnPolicyAlgorithm):
 
             all_kl_divs.append(np.mean(approx_kl_divs))
             mean_kl = np.mean(approx_kl_divs)
-            
-            if(mean_kl<self.kl_threshold/1.5):
+
+            if(np.abs(mean_kl)<self.kl_threshold/1.5):
                 self.beta*=0.5
                 self.beta=max(self.beta,1e-2)
                 logger.log(f"Mean KL Divergence: {mean_kl}, Adjust Beta /2: {self.beta} ")
-            elif(mean_kl>self.kl_threshold*1.5):
+            elif(np.abs(mean_kl)>self.kl_threshold*1.5):
                 self.beta*=2
                 self.beta=min(self.beta,1e6)
                 logger.log(f"Mean KL Divergence: {mean_kl}, Adjust Beta x2: {self.beta} ")
