@@ -249,6 +249,7 @@ class PPOAdjustKL(OnPolicyAlgorithm):
 
             all_kl_divs.append(np.mean(approx_kl_divs))
             mean_kl = np.mean(approx_kl_divs)
+            
             if(mean_kl<self.kl_threshold/1.5):
                 self.beta*=0.5
                 self.beta=max(self.beta,1e-2)
