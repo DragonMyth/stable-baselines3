@@ -242,19 +242,20 @@ class PPOAdjustKL(OnPolicyAlgorithm):
                 loss.backward()
                 # Clip grad norm
                 if(kl_loss <=self.kl_threshold*10):
-
                     th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
                     self.policy.optimizer.step()
+                else:
+                    logger.log(f"KL divergence too large, do not update")
                 approx_kl_divs.append(kl_loss.detach().cpu().numpy())
 
             all_kl_divs.append(np.mean(approx_kl_divs))
             mean_kl = np.mean(approx_kl_divs)
 
-            if(np.abs(mean_kl)<self.kl_threshold/1.5):
+            if(mean_kl<self.kl_threshold/1.5):
                 self.beta*=0.5
                 self.beta=max(self.beta,1e-2)
                 logger.log(f"Mean KL Divergence: {mean_kl}, Adjust Beta /2: {self.beta} ")
-            elif(np.abs(mean_kl)>self.kl_threshold*1.5):
+            elif(mean_kl>self.kl_threshold*1.5):
                 self.beta*=2
                 self.beta=min(self.beta,1e6)
                 logger.log(f"Mean KL Divergence: {mean_kl}, Adjust Beta x2: {self.beta} ")
