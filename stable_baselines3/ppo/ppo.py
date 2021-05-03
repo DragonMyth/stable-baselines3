@@ -172,6 +172,11 @@ class PPO(OnPolicyAlgorithm):
         pg_losses, value_losses = [], []
         clip_fractions = []
 
+        def get_policy_distribution(policy,obs):
+            latent_pi, _, latent_sde = policy._get_latent(obs)
+            distribution = policy._get_action_dist_from_latent(latent_pi, latent_sde)
+            return distribution.distribution
+
         # train for n_epochs epochs
         for epoch in range(self.n_epochs):
             approx_kl_divs = []
@@ -201,6 +206,13 @@ class PPO(OnPolicyAlgorithm):
                 policy_loss_1 = advantages * ratio
                 policy_loss_2 = advantages * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
                 policy_loss = -th.min(policy_loss_1, policy_loss_2).mean()
+
+
+                dist1 = get_policy_distribution(self.policy,rollout_data.observations)
+                dist2 = get_policy_distribution(self.old_policy,rollout_data.observations)
+                kl = th.distributions.kl.kl_divergence(dist1, dist2)
+                kl_loss = th.mean(kl)
+
 
                 # Logging
                 pg_losses.append(policy_loss.item())
@@ -237,7 +249,7 @@ class PPO(OnPolicyAlgorithm):
                 # Clip grad norm
                 th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
                 self.policy.optimizer.step()
-                approx_kl_divs.append(th.mean(rollout_data.old_log_prob - log_prob).detach().cpu().numpy())
+                approx_kl_divs.append(kl_loss.detach().cpu().numpy())
 
             all_kl_divs.append(np.mean(approx_kl_divs))
 
@@ -252,7 +264,7 @@ class PPO(OnPolicyAlgorithm):
         logger.record("train/entropy_loss", np.mean(entropy_losses))
         logger.record("train/policy_gradient_loss", np.mean(pg_losses))
         logger.record("train/value_loss", np.mean(value_losses))
-        logger.record("train/approx_kl", np.mean(approx_kl_divs))
+        logger.record("train/approx_kl", np.mean(all_kl_divs))
         logger.record("train/clip_fraction", np.mean(clip_fractions))
         logger.record("train/loss", loss.item())
         logger.record("train/explained_variance", explained_var)
