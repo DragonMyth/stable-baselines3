@@ -11,7 +11,7 @@ from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import explained_variance, get_schedule_fn
-
+import copy
 
 class PPOAdjustKL(OnPolicyAlgorithm):
     """
@@ -158,7 +158,7 @@ class PPOAdjustKL(OnPolicyAlgorithm):
                 assert self.clip_range_vf > 0, "`clip_range_vf` must be positive, " "pass `None` to deactivate vf clipping"
 
             self.clip_range_vf = get_schedule_fn(self.clip_range_vf)
-
+        self.old_policy = copy.deepcopy(self.policy)
     def train(self) -> None:
         """
         Update policy using the currently gathered rollout buffer.
@@ -175,6 +175,12 @@ class PPOAdjustKL(OnPolicyAlgorithm):
         pg_losses, value_losses = [], []
         clip_fractions = []
 
+        self.old_policy.load_state_dict(self.policy.state_dict())
+
+        def get_policy_distribution(policy,obs):
+            latent_pi, _, latent_sde = policy._get_latent(obs)
+            distribution = policy._get_action_dist_from_latent(latent_pi, latent_sde)
+            return distribution.distribution
         # train for n_epochs epochs
         for epoch in range(self.n_epochs):
             approx_kl_divs = []
@@ -204,7 +210,13 @@ class PPOAdjustKL(OnPolicyAlgorithm):
                 policy_loss_1 = advantages * ratio
                 policy_loss_2 = advantages * th.clamp(ratio, 1 - clip_range, 1 + clip_range)
 
-                kl_loss = th.mean(rollout_data.old_log_prob - log_prob)
+
+                dist1 = get_policy_distribution(self.policy,rollout_data.observations)
+                dist2 = get_policy_distribution(self.old_policy,rollout_data.observations)
+                kl = th.distributions.kl.kl_divergence(dist1, dist2)
+
+                # kl_loss = th.mean(rollout_data.old_log_prob - log_prob)
+                kl_loss = th.mean(kl)
 
                 policy_loss = -th.min(policy_loss_1, policy_loss_2).mean()
 
@@ -265,7 +277,7 @@ class PPOAdjustKL(OnPolicyAlgorithm):
             if self.target_kl is not None and np.mean(approx_kl_divs) > 1.5 * self.target_kl:
                 print(f"Early stopping at step {epoch} due to reaching max kl: {np.mean(approx_kl_divs):.2f}")
                 break
-
+        
         self._n_updates += self.n_epochs
         explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
 
@@ -284,7 +296,6 @@ class PPOAdjustKL(OnPolicyAlgorithm):
         logger.record("train/clip_range", clip_range)
         if self.clip_range_vf is not None:
             logger.record("train/clip_range_vf", clip_range_vf)
-
     def learn(
         self,
         total_timesteps: int,
