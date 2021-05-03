@@ -155,6 +155,7 @@ class PPO(OnPolicyAlgorithm):
                 assert self.clip_range_vf > 0, "`clip_range_vf` must be positive, " "pass `None` to deactivate vf clipping"
 
             self.clip_range_vf = get_schedule_fn(self.clip_range_vf)
+        self.old_policy = copy.deepcopy(self.policy)
 
     def train(self) -> None:
         """
@@ -171,6 +172,7 @@ class PPO(OnPolicyAlgorithm):
         entropy_losses, all_kl_divs = [], []
         pg_losses, value_losses = [], []
         clip_fractions = []
+        self.old_policy.load_state_dict(self.policy.state_dict())
 
         def get_policy_distribution(policy,obs):
             latent_pi, _, latent_sde = policy._get_latent(obs)
